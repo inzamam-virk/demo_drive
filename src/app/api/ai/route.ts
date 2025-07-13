@@ -10,8 +10,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { command, pageContext, mode = 'interactive' } = body;
 
+    console.log(`🤖 AI API called:`, {
+      mode,
+      command: command?.substring(0, 100),
+      hasPageContext: !!pageContext,
+      pageCount: pageContext?.visitedPages?.length || 0
+    });
+
     // Check if API key is available
     if (!process.env.GROQ_API_KEY) {
+      console.log(`⚠️ No API key available, using fallback response`);
+      
       // Return a fallback response without using the API
       const fallbackResponse = {
         action: {
@@ -22,6 +31,8 @@ export async function POST(request: NextRequest) {
           ? `I understand you want to: ${command}. Let me help you with that.`
           : 'Welcome to this page. Here you can explore the features and content available.',
       };
+
+      console.log(`✅ Returning fallback response:`, fallbackResponse);
 
       return NextResponse.json({
         success: true,
@@ -43,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (mode === 'tour') {
       // Automated tour mode
       systemPrompt = `You are an AI demo assistant conducting an automated tour of a website. 
-      Based on the page context provided, generate the next logical action and narration for the tour. Spend max 30 seconds on a single page and summarize it in this period. 
+      Based on the page context provided, generate the next logical action and narration for the tour. Spend max 30 seconds on a page and summarize it in this time period. 
       
       Return a JSON response with:
       - action: object with type, target (if applicable), and description
@@ -74,11 +85,23 @@ export async function POST(request: NextRequest) {
       
       If you can't determine the exact CSS selector, provide a general description and suggest the user be more specific.`;
 
+      const contextSummary = pageContext?.visitedPages ? 
+        `Visited pages: ${pageContext.visitedPages.map((p: any) => `${p.title} (${p.url})`).join(', ')}` :
+        'No page context available';
+
       userPrompt = `User command: "${command}"
-      Current page context: ${JSON.stringify(pageContext)}
       
-      Convert this command into a browser action.`;
+      Demo Context:
+      - Tour completed: ${pageContext?.tourCompleted || false}
+      - Pages visited: ${pageContext?.currentPageCount || 0}
+      - ${contextSummary}
+      
+      Current page context: ${JSON.stringify(pageContext?.visitedPages?.[pageContext?.visitedPages?.length - 1] || {})}
+      
+      Convert this command into a browser action or provide an informative response.`;
     }
+
+    console.log(`🔄 Sending request to Groq with model: llama3-8b-8192`);
 
     const response = await groq.chat.completions.create({
       messages: [
@@ -90,17 +113,27 @@ export async function POST(request: NextRequest) {
       max_tokens: 500,
     });
 
+    console.log(`✅ Received response from Groq`);
+
     const aiResponse = response.choices[0]?.message?.content;
     
     if (!aiResponse) {
+      console.error(`❌ No content in Groq response`);
       throw new Error('No response from AI');
     }
+
+    console.log(`📄 Raw AI response: "${aiResponse.substring(0, 200)}..."`);
 
     // Try to parse as JSON, fallback to text response
     let parsedResponse;
     try {
       parsedResponse = JSON.parse(aiResponse);
-    } catch {
+      console.log(`✅ Successfully parsed JSON response:`, {
+        actionType: parsedResponse.action?.type,
+        hasNarration: !!parsedResponse.narration
+      });
+    } catch (parseError) {
+      console.log(`⚠️ JSON parsing failed, using fallback response`);
       // If JSON parsing fails, create a basic response
       parsedResponse = {
         action: {
@@ -110,6 +143,12 @@ export async function POST(request: NextRequest) {
         narration: aiResponse,
       };
     }
+
+    console.log(`🎉 Returning final response:`, {
+      success: true,
+      actionType: parsedResponse.action?.type,
+      narrationLength: parsedResponse.narration?.length || 0
+    });
 
     return NextResponse.json({
       success: true,

@@ -16,13 +16,20 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [isNarrating, setIsNarrating] = useState(false);
+  const [pageContexts, setPageContexts] = useState<any[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    initializeTour();
-  }, [sessionId]);
+    if (!isInitialized && sessionId) {
+      initializeTour();
+    }
+  }, [sessionId, isInitialized]);
 
   const initializeTour = async () => {
     try {
+      console.log(`🎯 Initializing tour for session: ${sessionId}`);
+      setIsInitialized(true);
+      
       // Initialize tour
       await fetch('/api/tour', {
         method: 'POST',
@@ -35,32 +42,40 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
       });
 
       setIsConnected(true);
+      console.log(`🎯 Tour API initialized, starting automated tour...`);
       startAutomatedTour();
     } catch (error) {
       console.error('Tour initialization error:', error);
+      setIsInitialized(false);
     }
   };
 
   const startAutomatedTour = async () => {
     setTourStatus('running');
+    console.log(`🎬 Starting automated tour for ${pageUrls.length} pages`);
     
     for (let i = 0; i < pageUrls.length; i++) {
+      console.log(`📍 Tour progress: ${i + 1}/${pageUrls.length} - ${pageUrls[i]}`);
       setCurrentPageIndex(i);
       await tourPage(pageUrls[i]);
       
-      // Wait between pages
+      // Wait between pages (only if not the last page)
       if (i < pageUrls.length - 1) {
+        console.log(`⏸️ Waiting 2 seconds before next page...`);
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
     
+    console.log(`🎉 Tour completed! Total pages visited: ${pageUrls.length}`);
     setTourStatus('completed');
   };
 
   const tourPage = async (pageUrl: string) => {
     try {
+      console.log(`🚀 Starting tour for page: ${pageUrl}`);
+      
       // Navigate to page
-      await fetch('/api/browser', {
+      const navResponse = await fetch('/api/browser', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -70,8 +85,17 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
         }),
       });
 
-      // Wait for page load
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      if (!navResponse.ok) {
+        throw new Error(`Navigation failed: ${navResponse.status}`);
+      }
+
+      console.log(`✅ Navigation completed for: ${pageUrl}`);
+
+      // Wait for page load (shorter for same-page navigation)
+      const isSamePage = pageUrl === pageUrls[0];
+      const waitTime = isSamePage ? 1500 : 3000;
+      console.log(`⏳ Waiting ${waitTime}ms for page to load...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
 
       // Get page content
       const pageContentResponse = await fetch('/api/browser', {
@@ -83,7 +107,19 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
         }),
       });
 
+      if (!pageContentResponse.ok) {
+        throw new Error(`Page content extraction failed: ${pageContentResponse.status}`);
+      }
+
       const { pageContent } = await pageContentResponse.json();
+      console.log(`📄 Page content extracted:`, { 
+        title: pageContent.title, 
+        headings: pageContent.headings.length,
+        buttons: pageContent.buttons.length 
+      });
+
+      // Store page context for voice commands
+      setPageContexts(prev => [...prev, pageContent]);
 
       // Generate narration
       const narrationResponse = await fetch('/api/tour', {
@@ -96,33 +132,93 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
         }),
       });
 
+      if (!narrationResponse.ok) {
+        throw new Error(`Narration generation failed: ${narrationResponse.status}`);
+      }
+
       const { narration } = await narrationResponse.json();
+      console.log(`🎤 Generated narration: "${narration.substring(0, 100)}..."`);
+
+      // Update screenshot first (before speaking)
+      await updateScreenshot();
 
       // Speak narration
       setIsNarrating(true);
+      console.log(`🔊 Starting speech synthesis...`);
       await speakText(narration);
       setIsNarrating(false);
-
-      // Update screenshot
-      updateScreenshot();
+      console.log(`✅ Speech synthesis completed for: ${pageUrl}`);
 
     } catch (error) {
-      console.error('Page tour error:', error);
+      console.error(`❌ Page tour error for ${pageUrl}:`, error);
+      setIsNarrating(false);
     }
   };
 
   const speakText = (text: string): Promise<void> => {
     return new Promise((resolve) => {
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 0.8;
-        
-        utterance.onend = () => resolve();
-        speechSynthesis.speak(utterance);
-      } else {
+      console.log(`🔊 Attempting to speak: "${text.substring(0, 50)}..."`);
+      
+      if (!('speechSynthesis' in window)) {
+        console.error(`❌ Speech synthesis not supported`);
         resolve();
+        return;
+      }
+
+      // Wait for voices to load
+      const initSpeech = () => {
+        const voices = speechSynthesis.getVoices();
+        console.log(`🎙️ Available voices: ${voices.length}`);
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.8;
+        utterance.pitch = 1;
+        utterance.volume = 0.9;
+        
+        // Choose a good voice
+        const preferredVoice = voices.find(voice => 
+          voice.lang.startsWith('en') && voice.localService
+        );
+        
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
+          console.log(`🎤 Using voice: ${preferredVoice.name}`);
+        }
+
+        utterance.onstart = () => {
+          console.log(`▶️ Speech started`);
+        };
+
+        utterance.onend = () => {
+          console.log(`✅ Speech completed`);
+          resolve();
+        };
+
+        utterance.onerror = (event) => {
+          console.error(`❌ Speech error:`, event.error);
+          resolve(); // Don't fail the whole process
+        };
+
+        console.log(`🎵 Starting speech synthesis...`);
+        speechSynthesis.speak(utterance);
+      };
+
+      // Check if voices are already loaded
+      if (speechSynthesis.getVoices().length > 0) {
+        initSpeech();
+      } else {
+        // Wait for voices to load
+        console.log(`⏳ Waiting for voices to load...`);
+        speechSynthesis.onvoiceschanged = () => {
+          console.log(`🔄 Voices loaded, initializing speech...`);
+          initSpeech();
+        };
+        
+        // Fallback timeout in case voices never load
+        setTimeout(() => {
+          console.log(`⏰ Voice loading timeout, trying anyway...`);
+          initSpeech();
+        }, 2000);
       }
     });
   };
@@ -139,31 +235,63 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
 
   const handleVoiceCommand = async (command: string) => {
     try {
+      console.log(`🎙️ Voice command received: "${command}"`);
+      console.log(`📋 Available page contexts: ${pageContexts.length} pages`);
+      
+      // Prepare comprehensive context for AI
+      const allPageContext = {
+        visitedPages: pageContexts,
+        currentPageCount: pageContexts.length,
+        pageUrls: pageUrls,
+        tourCompleted: tourStatus === 'completed'
+      };
+
+      console.log(`🔄 Sending to AI with context:`, {
+        command,
+        pageCount: pageContexts.length,
+        tourStatus
+      });
+
       // Send command to AI for interpretation
       const response = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           command,
+          pageContext: allPageContext,
           mode: 'interactive',
           sessionId 
         }),
       });
 
+      console.log(`📨 AI API response status: ${response.status}`);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ AI API error: ${response.status} - ${errorText}`);
         throw new Error(`AI API error: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log(`🤖 AI response data:`, data);
+      
       const aiResponse = data.response;
       
       if (!aiResponse) {
+        console.error(`❌ No AI response in data:`, data);
         throw new Error('No response from AI');
       }
 
+      console.log(`✅ AI interpretation:`, {
+        action: aiResponse.action,
+        narration: aiResponse.narration?.substring(0, 100) + '...'
+      });
+
       // Execute the action if available
       if (aiResponse.action && aiResponse.action.type) {
-        await fetch('/api/browser', {
+        console.log(`🎬 Executing browser action: ${aiResponse.action.type}`);
+        
+        const browserResponse = await fetch('/api/browser', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -176,20 +304,29 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
             amount: aiResponse.action.amount
           }),
         });
+
+        console.log(`🔧 Browser action response: ${browserResponse.status}`);
+        
+        if (!browserResponse.ok) {
+          console.error(`❌ Browser action failed: ${browserResponse.status}`);
+        }
       }
 
       // Speak the response
       if (aiResponse.narration) {
+        console.log(`🔊 Speaking AI response...`);
         await speakText(aiResponse.narration);
       } else {
+        console.log(`🔊 Speaking fallback response...`);
         await speakText(`Command processed: ${command}`);
       }
 
       // Update screenshot
-      updateScreenshot();
+      console.log(`📸 Updating screenshot...`);
+      await updateScreenshot();
 
     } catch (error) {
-      console.error('Voice command error:', error);
+      console.error(`❌ Voice command error for "${command}":`, error);
       await speakText('Sorry, I had trouble processing that command. Please try again.');
     }
   };
@@ -273,6 +410,21 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
           isEnabled={tourStatus === 'completed'}
           onVoiceCommand={handleVoiceCommand}
         />
+
+        {/* Debug Speech Button */}
+        <div className="p-4 bg-gray-100 border-t">
+          <div className="text-center">
+            <button
+              onClick={() => speakText('Testing speech synthesis. This is a test message to verify that speech is working correctly.')}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              🔊 Test Speech
+            </button>
+            <span className="ml-4 text-sm text-gray-600">
+              Debug: Click to test speech synthesis
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

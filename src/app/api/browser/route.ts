@@ -62,7 +62,27 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'navigate':
         if (url) {
-          await page.goto(url, { waitUntil: 'networkidle0' });
+          try {
+            console.log(`🔄 Navigating to: ${url}`);
+            await page.goto(url, { 
+              waitUntil: 'networkidle0',
+              timeout: 30000 // 30 second timeout
+            });
+            console.log(`✅ Successfully navigated to: ${url}`);
+          } catch (navError) {
+            console.error(`❌ Navigation failed for ${url}:`, navError);
+            // Try with a more lenient wait condition
+            try {
+              await page.goto(url, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 15000 
+              });
+              console.log(`✅ Navigated with fallback method to: ${url}`);
+            } catch (fallbackError) {
+              console.error(`❌ Fallback navigation also failed for ${url}:`, fallbackError);
+              throw new Error(`Failed to navigate to ${url}: ${navError instanceof Error ? navError.message : 'Unknown error'}`);
+            }
+          }
         }
         break;
 

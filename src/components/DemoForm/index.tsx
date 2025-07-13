@@ -10,10 +10,9 @@ interface DemoFormProps {
 export default function DemoForm({ onStartDemo, isLoading }: DemoFormProps) {
   const [mainUrl, setMainUrl] = useState('https://inzamamvirk.vercel.app/');
   const [pageUrls, setPageUrls] = useState<string[]>([
-    'https://inzamamvirk.vercel.app/',
     'https://inzamamvirk.vercel.app/about',
-    'https://inzamamvirk.vercel.app/projects',
-    'https://inzamamvirk.vercel.app/articles'
+    'https://inzamamvirk.vercel.app/articles',
+    'https://inzamamvirk.vercel.app/projects'
   ]);
   const [newPageUrl, setNewPageUrl] = useState('');
 
