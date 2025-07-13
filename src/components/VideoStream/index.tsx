@@ -6,10 +6,11 @@ import VoiceChat from '@/components/VoiceChat';
 interface VideoStreamProps {
   sessionId: string;
   pageUrls: string[];
+  mainUrl: string;
   onEndDemo: () => void;
 }
 
-export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStreamProps) {
+export default function VideoStream({ sessionId, pageUrls, mainUrl, onEndDemo }: VideoStreamProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [tourStatus, setTourStatus] = useState<'starting' | 'running' | 'completed'>('starting');
@@ -46,7 +47,7 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
     
     for (let i = 0; i < pageUrls.length; i++) {
       setCurrentPageIndex(i);
-      await tourPage(pageUrls[i]);
+      await tourPage(pageUrls[i], i === 0);
       
       // Wait between pages
       if (i < pageUrls.length - 1) {
@@ -57,21 +58,29 @@ export default function VideoStream({ sessionId, pageUrls, onEndDemo }: VideoStr
     setTourStatus('completed');
   };
 
-  const tourPage = async (pageUrl: string) => {
+  const tourPage = async (pageUrl: string, isFirstPage: boolean = false) => {
     try {
-      // Navigate to page
-      await fetch('/api/browser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          sessionId, 
-          action: 'navigate',
-          url: pageUrl 
-        }),
-      });
+      // Only navigate if it's not the first page or if the URL is different from mainUrl
+      const needsNavigation = !isFirstPage || pageUrl !== mainUrl;
+      
+      if (needsNavigation) {
+        // Navigate to page
+        await fetch('/api/browser', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            sessionId, 
+            action: 'navigate',
+            url: pageUrl 
+          }),
+        });
 
-      // Wait for page load
-      await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait for page load
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } else {
+        // If it's the first page and same as mainUrl, just wait a bit for any loading to finish
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
 
       // Get page content
       const pageContentResponse = await fetch('/api/browser', {

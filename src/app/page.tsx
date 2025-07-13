@@ -8,10 +8,12 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [pageUrls, setPageUrls] = useState<string[]>([]);
+  const [mainUrl, setMainUrl] = useState<string>('');
 
   const handleStartDemo = async (mainUrl: string, pageUrls: string[]) => {
     setIsLoading(true);
     setPageUrls(pageUrls);
+    setMainUrl(mainUrl);
     
     try {
       // Create session
@@ -75,6 +77,7 @@ export default function Home() {
     
     setSessionId(null);
     setPageUrls([]);
+    setMainUrl('');
   };
 
   return (
@@ -82,7 +85,7 @@ export default function Home() {
       {!sessionId ? (
         <DemoForm onStartDemo={handleStartDemo} isLoading={isLoading} />
       ) : (
-        <VideoStream sessionId={sessionId} pageUrls={pageUrls} onEndDemo={handleEndDemo} />
+        <VideoStream sessionId={sessionId} pageUrls={pageUrls} mainUrl={mainUrl} onEndDemo={handleEndDemo} />
       )}
     </div>
   );

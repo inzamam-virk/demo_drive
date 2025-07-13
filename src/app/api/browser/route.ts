@@ -62,10 +62,12 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'navigate':
         if (url) {
-          await page.goto(url, { waitUntil: 'networkidle0' });
+          await page.goto(url, { 
+            waitUntil: 'domcontentloaded', // or 'load'
+            timeout: 30000
+          });
         }
         break;
-
       case 'click':
         const { selector } = body;
         if (selector) {
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest) {
         const currentUrl = page.url();
         const pageContent = await page.evaluate(() => {
           // Extract comprehensive page content
-          const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(el => el.textContent?.trim()).filter(Boolean);
+          const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(el => el.textContent?.trim()).filter((text): text is string => Boolean(text));
           
           const buttons = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], .btn')).map(el => ({
             text: el.textContent?.trim() || (el as HTMLInputElement).value || 'Button',
