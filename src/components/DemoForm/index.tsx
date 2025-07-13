@@ -13,7 +13,7 @@ export default function DemoForm({ onStartDemo, isLoading }: DemoFormProps) {
     'https://inzamamvirk.vercel.app/',
     'https://inzamamvirk.vercel.app/about',
     'https://inzamamvirk.vercel.app/projects',
-    'https://inzamamvirk.vercel.app/contact'
+    'https://inzamamvirk.vercel.app/articles'
   ]);
   const [newPageUrl, setNewPageUrl] = useState('');
 

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     if (mode === 'tour') {
       // Automated tour mode
       systemPrompt = `You are an AI demo assistant conducting an automated tour of a website. 
-      Based on the page context provided, generate the next logical action and narration for the tour.
+      Based on the page context provided, generate the next logical action and narration for the tour. Spend max 30 seconds on a single page and summarize it in this period. 
       
       Return a JSON response with:
       - action: object with type, target (if applicable), and description

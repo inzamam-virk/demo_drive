@@ -152,6 +152,7 @@ export async function POST(request: NextRequest) {
 
 async function generatePageNarration(pageContent: PageContent, visitedPages: PageContent[]): Promise<string> {
   try {
+    console.log('process.env.GROQ_API_KEY: ', process.env.GROQ_API_KEY)
     // Check if API key is available
     if (!process.env.GROQ_API_KEY) {
       // Generate a simple fallback narration
